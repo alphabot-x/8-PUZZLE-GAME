@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>8-Puzzle Solver — A* Search Algorithm</title>
+
+  <!-- Google Fonts: Syne for headings (bold, technical), DM Mono for grid numbers -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    /* ─────────────────────────────────────────────
+       CSS VARIABLES — One place to change all colours
+       ───────────────────────────────────────────── */
+    :root {
+      --bg:        #0d0f14;       /* Deep dark background */
+      --panel:     #141720;       /* Slightly lighter panel */
+      --border:    #252a38;       /* Subtle border colour */
+      --gold:      #f0a500;       /* Accent: A* highlight colour */
+      --gold-dim:  #7a5300;       /* Dimmer gold for borders */
+      --teal:      #00c9a7;       /* Success / goal colour */
+      --red:       #ff5c5c;       /* Error / failure colour */
+      --blue:      #4a9eff;       /* Info / step colour */
+      --text:      #e8eaf0;       /* Primary text */
+      --muted:     #6b7280;       /* Secondary/muted text */
+      --tile-bg:   #1e2330;       /* Default tile background */
+      --tile-num:  #e8eaf0;       /* Tile number colour */
+      --font-head: 'Syne', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    /* ─────────────────────────────────────────────
+       RESET & BASE
+       ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      min-height: 100vh;
+      padding: 24px 16px 48px;
+      /* Subtle grid pattern in the background */
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      background-position: -1px -1px;
+    }
+
+    /* ─────────────────────────────────────────────
+       LAYOUT — Main container
+       ───────────────────────────────────────────── */
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+
+    /* ─────────────────────────────────────────────
+       HEADER
+       ───────────────────────────────────────────── */
+    .header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .header .badge {
+      display: inline-block;
+      background: var(--gold-dim);
+      color: var(--gold);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 2px;
+      padding: 4px 12px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+    }
+    .header h1 {
+      font-family: var(--font-head);
+      font-size: clamp(28px, 5vw, 52px);
+      font-weight: 800;
+      letter-spacing: -1px;
+      line-height: 1.1;
+      /* Gold gradient on the title text */
+      background: linear-gradient(135deg, var(--gold) 0%, #fff 60%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header p {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 8px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ─────────────────────────────────────────────
+       MAIN GRID — Two columns: Controls | Visualizer
+       ───────────────────────────────────────────── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 780px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ─────────────────────────────────────────────
+       PANEL — Reusable card-style panel
+       ───────────────────────────────────────────── */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .panel-title {
+      font-family: var(--font-head);
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-title::before {
+      content: '';
+      display: block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--gold);
+    }
+
+    /* ─────────────────────────────────────────────
+       PUZZLE GRID — The 3x3 tile board
+       ───────────────────────────────────────────── */
+    .puzzle-wrapper {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .puzzle-label {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .puzzle-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      width: 186px;
+    }
+
+    /* Each individual tile */
+    .tile {
+      width: 56px; height: 56px;
+      background: var(--tile-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-head);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--tile-num);
+      transition: background 0.3s, transform 0.2s, border-color 0.3s;
+      cursor: default;
+      user-select: none;
+      position: relative;
+    }
+    /* Empty tile (value = 0) */
+    .tile.empty {
+      background: transparent;
+      border: 1px dashed var(--border);
+      color: transparent;
+    }
+    /* Tile that is already in its goal position */
+    .tile.correct {
+      background: #0d2e28;
+      border-color: var(--teal);
+      color: var(--teal);
+    }
+    /* Tile that was just moved (flash animation) */
+    .tile.moved {
+      animation: tilePop 0.3s ease;
+    }
+    @keyframes tilePop {
+      0%   { transform: scale(0.85); }
+      60%  { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+
+    /* Arrow between initial and goal grids */
+    .arrow-between {
+      font-size: 28px;
+      color: var(--gold);
+      font-family: var(--font-head);
+    }
+
+    /* ─────────────────────────────────────────────
+       CONTROLS — Buttons and inputs
+       ───────────────────────────────────────────── */
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+      text-transform: uppercase;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--gold);
+      color: #000;
+      margin-bottom: 8px;
+    }
+    .btn-secondary {
+      background: var(--border);
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .btn-step {
+      background: #1a2540;
+      color: var(--blue);
+      border: 1px solid var(--blue);
+      margin-bottom: 8px;
+    }
+
+    /* Speed slider */
+    .speed-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .speed-label { font-size: 11px; color: var(--muted); min-width: 44px; }
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--gold);
+      height: 4px;
+      cursor: pointer;
+    }
+
+    /* ─────────────────────────────────────────────
+       STATS BAR — g(n), h(n), f(n) display
+       ───────────────────────────────────────────── */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .stat-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+      transition: border-color 0.3s;
+    }
+    .stat-box.active { border-color: var(--gold); }
+    .stat-box .stat-val {
+      font-family: var(--font-head);
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--gold);
+      line-height: 1;
+    }
+    .stat-box .stat-key {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+      letter-spacing: 1px;
+    }
+
+    /* ─────────────────────────────────────────────
+       RIGHT PANEL — Solution path + step log
+       ───────────────────────────────────────────── */
+    .right-col { display: flex; flex-direction: column; gap: 16px; }
+
+    /* Solution steps path: the scrollable list of moves */
+    .solution-path {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      max-height: 96px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .step-chip {
+      background: #1a2540;
+      border: 1px solid var(--border);
+      color: var(--blue);
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      transition: background 0.2s, border-color 0.2s;
+      font-family: var(--font-mono);
+    }
+    .step-chip.done  { background: #0d2e28; border-color: var(--teal); color: var(--teal); }
+    .step-chip.cur   { background: #3a2500; border-color: var(--gold); color: var(--gold); animation: chipPulse 0.8s ease infinite alternate; }
+    @keyframes chipPulse { from { box-shadow: none; } to { box-shadow: 0 0 8px var(--gold-dim); } }
+
+    /* Step-by-step log — shows algorithm internals */
+    .log-box {
+      height: 240px;
+      overflow-y: auto;
+      background: #0a0c10;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 11px;
+      line-height: 1.7;
+      color: var(--muted);
+      scroll-behavior: smooth;
+    }
+    .log-line { margin-bottom: 2px; }
+    .log-line.info  { color: var(--blue); }
+    .log-line.ok    { color: var(--teal); }
+    .log-line.warn  { color: var(--gold); }
+    .log-line.err   { color: var(--red); }
+    .log-line.head  { color: var(--text); font-weight: 500; border-top: 1px solid var(--border); padding-top: 6px; margin-top: 4px; }
+
+    /* Status message at the top of right panel */
+    .status-msg {
+      text-align: center;
+      font-family: var(--font-head);
+      font-size: 15px;
+      font-weight: 700;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--muted);
+      transition: background 0.4s, color 0.4s, border-color 0.4s;
+    }
+    .status-msg.solving   { color: var(--gold);  border-color: var(--gold-dim);  background: #1a1200; }
+    .status-msg.solved    { color: var(--teal);  border-color: var(--teal);      background: #061a16; }
+    .status-msg.no-sol    { color: var(--red);   border-color: var(--red);       background: #1a0606; }
+    .status-msg.animating { color: var(--blue);  border-color: var(--blue);      background: #06101a; }
+
+    /* Scrollbar styling for dark theme */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════
+     HEADER
+═══════════════════════════════════════════════ -->
+<div class="container">
+  <div class="header">
+    <div class="badge">21CSC206T — Artificial Intelligence · FT3 Project</div>
+    <h1>8-Puzzle Solver</h1>
+    <p>A* Search Algorithm with Manhattan Distance Heuristic · SRM Institute of Science &amp; Technology</p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       MAIN TWO-COLUMN LAYOUT
+  ═══════════════════════════════════════════════ -->
+  <div class="main-grid">
+
+    <!-- ─── LEFT COLUMN: Controls ─── -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+
+      <!-- Puzzle display: Current State -->
+      <div class="panel">
+        <div class="panel-title">Puzzle State</div>
+
+        <!-- The two grids side by side: INITIAL vs GOAL -->
+        <div class="puzzle-wrapper">
+          <div>
+            <div class="puzzle-label">Current</div>
+            <!-- This grid shows the live animated puzzle -->
+            <div class="puzzle-grid" id="currentGrid"></div>
+          </div>
+          <div class="arrow-between">→</div>
+          <div>
+            <div class="puzzle-label">Goal</div>
+            <!-- This grid always shows the fixed goal state -->
+            <div class="puzzle-grid" id="goalGrid"></div>
+          </div>
+        </div>
+
+        <!-- f(n), g(n), h(n) live counters -->
+        <div class="stats-bar">
+          <div class="stat-box" id="boxF">
+            <div class="stat-val" id="valF">—</div>
+            <div class="stat-key">f(n) = g+h</div>
+          </div>
+          <div class="stat-box" id="boxG">
+            <div class="stat-val" id="valG">—</div>
+            <div class="stat-key">g(n) cost</div>
+          </div>
+          <div class="stat-box" id="boxH">
+            <div class="stat-val" id="valH">—</div>
+            <div class="stat-key">h(n) heuristic</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls panel -->
+      <div class="panel">
+        <div class="panel-title">Controls</div>
+
+        <!-- Shuffle: randomises the puzzle with a solvable state -->
+        <button class="btn btn-secondary" onclick="shufflePuzzle()">⟳  Shuffle Puzzle</button>
+
+        <!-- Solve: runs A* and finds the solution path -->
+        <button class="btn btn-primary"    onclick="solvePuzzle()" id="btnSolve">▶  Solve with A*</button>
+
+        <!-- Step: moves one step at a time through the solution -->
+        <button class="btn btn-step"       onclick="stepOnce()"    id="btnStep"  disabled>⤵  Step Once</button>
+
+        <!-- Auto Play: plays all steps automatically -->
+        <button class="btn btn-secondary"  onclick="togglePlay()"  id="btnPlay"  disabled>⏵  Auto Play</button>
+
+        <!-- Reset: back to original scrambled state -->
+        <button class="btn btn-secondary"  onclick="resetPuzzle()" id="btnReset" disabled>↩  Reset</button>
+
+        <!-- Animation speed slider -->
+        <div class="speed-row">
+          <span class="speed-label">Speed</span>
+          <input type="range" min="100" max="1500" value="600" step="100" id="speedSlider">
+          <span class="speed-label" id="speedVal">600ms</span>
+        </div>
+      </div>
+
+      <!-- Node counter panel -->
+      <div class="panel">
+        <div class="panel-title">Algorithm Stats</div>
+        <div class="stats-bar" style="grid-template-columns:1fr 1fr;">
+          <div class="stat-box">
+            <div class="stat-val" id="nodesExplored" style="color:var(--blue)">0</div>
+            <div class="stat-key">Nodes explored</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="pathLength" style="color:var(--teal)">0</div>
+            <div class="stat-key">Solution moves</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── RIGHT COLUMN: Log & Path ─── -->
+    <div class="right-col">
+
+      <!-- Status message -->
+      <div class="status-msg" id="statusMsg">Shuffle the puzzle and press Solve to begin</div>
+
+      <!-- Solution path: shows each move as a chip -->
+      <div class="panel">
+        <div class="panel-title">Solution Path</div>
+        <div class="solution-path" id="solutionPath">
+          <span style="color:var(--muted); font-size:12px;">No solution yet — press Solve ↑</span>
+        </div>
+      </div>
+
+      <!-- Algorithm log: shows internal A* steps -->
+      <div class="panel" style="flex:1">
+        <div class="panel-title">Algorithm Log</div>
+        <div class="log-box" id="logBox">
+          <div class="log-line">Waiting for input...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     JAVASCRIPT — Full A* Implementation
+     Read this carefully — every section is commented!
+═══════════════════════════════════════════════ -->
+<script>
+
+/* ─────────────────────────────────────────────────
+   SECTION 1: CONSTANTS
+   The goal state is the target configuration.
+   We represent the board as a flat array of 9 numbers.
+   0 = the blank tile.
+   ───────────────────────────────────────────────── */
+const GOAL = [1, 2, 3,
+              4, 5, 6,
+              7, 8, 0];   // 0 is the blank/empty tile
+
+// The 4 possible moves for the blank tile: index change on a 3x3 grid
+// UP: blank moves up   → swap with the tile 3 positions before it
+// DOWN: blank moves down → swap with tile 3 positions after
+// LEFT: blank moves left → swap with tile 1 position before
+// RIGHT: blank moves right → swap with tile 1 position after
+const MOVES = {
+  'UP':    -3,
+  'DOWN':  +3,
+  'LEFT':  -1,
+  'RIGHT': +1
+};
+
+/* ─────────────────────────────────────────────────
+   SECTION 2: GAME STATE VARIABLES
+   These variables track what's happening right now.
+   ───────────────────────────────────────────────── */
+let currentState   = [...GOAL];  // The puzzle board right now (array of 9)
+let initialState   = [...GOAL];  // The scrambled starting board (saved for reset)
+let solutionMoves  = [];         // List of moves found by A* e.g. ['UP','LEFT','DOWN']
+let solutionStates = [];         // Board state after each move
+let stepIndex      = 0;          // How far we are through the solution animation
+let isPlaying      = false;      // Is auto-play running?
+let playTimer      = null;       // setInterval handle for auto-play
+
+/* ─────────────────────────────────────────────────
+   SECTION 3: HEURISTIC FUNCTION — Manhattan Distance
+   
+   This is the HEART of A* for the 8-puzzle.
+   For every tile, we calculate how far it is from
+   where it SHOULD be (its goal position).
+   We add up all those distances → that's h(n).
+   
+   Example: tile '5' is at position (row=0, col=2)
+            but should be at (row=1, col=1)
+            Manhattan Distance = |0-1| + |2-1| = 2
+   ───────────────────────────────────────────────── */
+function manhattanDistance(state) {
+  let total = 0;
+
+  for (let i = 0; i < 9; i++) {
+    const tile = state[i];
+
+    // Skip the blank tile (0) — we don't count it
+    if (tile === 0) continue;
+
+    // Where is this tile right now? (current row and column)
+    const curRow = Math.floor(i / 3);
+    const curCol = i % 3;
+
+    // Where SHOULD this tile be? (its index in the GOAL array)
+    const goalIndex = GOAL.indexOf(tile);
+    const goalRow   = Math.floor(goalIndex / 3);
+    const goalCol   = goalIndex % 3;
+
+    // Manhattan Distance = horizontal steps + vertical steps
+    total += Math.abs(curRow - goalRow) + Math.abs(curCol - goalCol);
+  }
+
+  return total;  // This is our h(n) value
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 4: CHECK IF A STATE IS SOLVABLE
+   
+   Not every random arrangement of tiles can be solved.
+   We use the "inversion count" trick:
+   Count how many pairs (a, b) exist where a appears
+   before b in the array but a > b.
+   If inversion count is EVEN → solvable.
+   If inversion count is ODD  → not solvable.
+   ───────────────────────────────────────────────── */
+function isSolvable(state) {
+  let inversions = 0;
+
+  for (let i = 0; i < 9; i++) {
+    for (let j = i + 1; j < 9; j++) {
+      // Ignore the blank tile (0)
+      if (state[i] === 0 || state[j] === 0) continue;
+      // If a tile that comes earlier is BIGGER than a later tile → inversion
+      if (state[i] > state[j]) inversions++;
+    }
+  }
+
+  return inversions % 2 === 0;  // Even inversions = solvable
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 5: GET VALID MOVES
+   
+   Given a board state, find what moves the blank
+   tile can actually make (can't move off the grid).
+   ───────────────────────────────────────────────── */
+function getValidMoves(state) {
+  const blankIndex = state.indexOf(0);  // Find where the blank (0) is
+  const row = Math.floor(blankIndex / 3);
+  const col = blankIndex % 3;
+  const valid = [];
+
+  // UP: blank can move up only if it's not in the top row (row > 0)
+  if (row > 0)           valid.push('UP');
+  // DOWN: blank can move down only if it's not in the bottom row (row < 2)
+  if (row < 2)           valid.push('DOWN');
+  // LEFT: blank can move left only if it's not in the left column (col > 0)
+  if (col > 0)           valid.push('LEFT');
+  // RIGHT: blank can move right only if it's not in the right column (col < 2)
+  if (col < 2)           valid.push('RIGHT');
+
+  return valid;
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 6: APPLY A MOVE
+   
+   Takes a board state and a move direction,
+   returns the NEW board state after the move.
+   We swap the blank tile with its neighbour.
+   ───────────────────────────────────────────────── */
+function applyMove(state, move) {
+  const newState   = [...state];           // Copy the array (don't mutate!)
+  const blankIndex = newState.indexOf(0);  // Find blank tile
+  const swapIndex  = blankIndex + MOVES[move]; // Find the tile to swap with
+
+  // Swap blank with neighbour
+  [newState[blankIndex], newState[swapIndex]] = [newState[swapIndex], newState[blankIndex]];
+
+  return newState;
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 7: A* SEARCH ALGORITHM ⭐
+   
+   This is the MAIN algorithm. Here's the full logic:
+   
+   1. Start with the initial state in the Open List.
+   2. While Open List is not empty:
+      a. Pick the node with the lowest f(n) = g(n) + h(n)
+      b. If it's the goal → we're done! Trace back the path.
+      c. Otherwise, expand it: try all valid moves.
+      d. For each new state, compute f, g, h.
+      e. If not already visited (Closed List), add to Open List.
+   3. If Open List empties without finding goal → no solution.
+   ───────────────────────────────────────────────── */
+function astarSearch(startState) {
+  log('head', '▶ A* Search Started');
+  log('info', `Initial h(n) = ${manhattanDistance(startState)}`);
+
+  // ── OPEN LIST: nodes we still need to explore
+  // Each entry: { state, g, h, f, moves, parent }
+  const openList = [];
+
+  // ── CLOSED SET: states we've already explored (as strings for fast lookup)
+  const closedSet = new Set();
+
+  // ── STARTING NODE
+  const h0 = manhattanDistance(startState);
+  openList.push({
+    state: startState,
+    g: 0,           // cost from start = 0 (we're AT the start)
+    h: h0,          // heuristic estimate to goal
+    f: h0,          // f = g + h = 0 + h0
+    moves: [],       // list of moves taken so far
+    states: [startState]  // list of board states so far
+  });
+
+  let nodesExplored = 0;
+
+  // ── MAIN LOOP: keep going while there are nodes to explore
+  while (openList.length > 0) {
+
+    // STEP A: Sort Open List by f(n) — the node with LOWEST f goes first
+    // This is the key insight of A*: always explore the most promising node
+    openList.sort((a, b) => a.f - b.f);
+
+    // STEP B: Pick the best node (lowest f)
+    const current = openList.shift();  // Remove from front
+    nodesExplored++;
+
+    // Update the "nodes explored" counter on screen
+    document.getElementById('nodesExplored').textContent = nodesExplored;
+
+    // STEP C: Check if this is the GOAL STATE
+    if (current.state.join(',') === GOAL.join(',')) {
+      log('ok', `✓ Goal found! Moves: ${current.moves.length}, Nodes explored: ${nodesExplored}`);
+      return {
+        moves:  current.moves,   // The sequence of moves (solution path)
+        states: current.states,  // Board after each move
+        nodesExplored
+      };
+    }
+
+    // STEP D: Add to Closed Set (we've now explored this state)
+    const stateKey = current.state.join(',');
+    if (closedSet.has(stateKey)) continue;  // Already explored, skip
+    closedSet.add(stateKey);
+
+    // Log every 10th node to avoid flooding the log
+    if (nodesExplored % 10 === 0 || nodesExplored <= 5) {
+      log('', `Node #${nodesExplored}: g=${current.g} h=${current.h} f=${current.f}`);
+    }
+
+    // STEP E: Expand this node — try all valid moves
+    const validMoves = getValidMoves(current.state);
+
+    for (const move of validMoves) {
+      // Apply the move to get the next board state
+      const nextState = applyMove(current.state, move);
+      const nextKey   = nextState.join(',');
+
+      // Skip if we've already explored this state
+      if (closedSet.has(nextKey)) continue;
+
+      // Calculate g, h, f for this successor
+      const g = current.g + 1;                   // One more move from start
+      const h = manhattanDistance(nextState);     // Heuristic to goal
+      const f = g + h;                            // Total estimate
+
+      // Add this successor to the Open List
+      openList.push({
+        state:  nextState,
+        g, h, f,
+        moves:  [...current.moves, move],          // All moves so far + this one
+        states: [...current.states, nextState]     // All states so far + this one
+      });
+    }
+  }
+
+  // If we get here, no solution was found
+  log('err', '✗ No solution exists for this configuration.');
+  return null;
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 8: UI RENDERING — Draw the puzzle grids
+   ───────────────────────────────────────────────── */
+
+// Render the GOAL grid (this never changes, just shows 1-8 + empty)
+function renderGoalGrid() {
+  const grid = document.getElementById('goalGrid');
+  grid.innerHTML = '';
+  GOAL.forEach(val => {
+    const tile = document.createElement('div');
+    tile.className = 'tile' + (val === 0 ? ' empty correct' : ' correct');
+    tile.textContent = val === 0 ? '' : val;
+    grid.appendChild(tile);
+  });
+}
+
+// Render the CURRENT state grid (updates as animation plays)
+function renderCurrentGrid(state, prevState = null) {
+  const grid = document.getElementById('currentGrid');
+  grid.innerHTML = '';
+
+  state.forEach((val, i) => {
+    const tile = document.createElement('div');
+
+    // Is this tile in its correct goal position?
+    const isCorrect = (val !== 0 && GOAL[i] === val);
+    // Was this tile just moved? (compare with previous state)
+    const wasMoved  = prevState && prevState[i] !== val;
+
+    tile.className = 'tile'
+      + (val === 0 ? ' empty' : '')
+      + (isCorrect  ? ' correct' : '')
+      + (wasMoved   ? ' moved'   : '');
+
+    tile.textContent = val === 0 ? '' : val;
+    grid.appendChild(tile);
+  });
+
+  // Update the f/g/h stats
+  const g = stepIndex;
+  const h = manhattanDistance(state);
+  document.getElementById('valG').textContent = g;
+  document.getElementById('valH').textContent = h;
+  document.getElementById('valF').textContent = g + h;
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 9: LOG HELPER
+   Adds a coloured line to the algorithm log box.
+   ───────────────────────────────────────────────── */
+function log(type, message) {
+  const box = document.getElementById('logBox');
+  const line = document.createElement('div');
+  line.className = `log-line ${type}`;
+  line.textContent = `[${String(new Date().toLocaleTimeString())}] ${message}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;  // Auto-scroll to bottom
+}
+
+function clearLog() {
+  document.getElementById('logBox').innerHTML = '';
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 10: SHUFFLE — Create a random solvable puzzle
+   ───────────────────────────────────────────────── */
+function shufflePuzzle() {
+  stopPlay();
+  clearLog();
+  log('info', 'Shuffling puzzle...');
+
+  let state;
+  let attempts = 0;
+
+  // Keep shuffling until we get a solvable arrangement
+  do {
+    state = [...GOAL];
+    // Fisher-Yates shuffle: a fair random shuffle algorithm
+    for (let i = state.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [state[i], state[j]] = [state[j], state[i]];
+    }
+    attempts++;
+  } while (!isSolvable(state) && attempts < 1000);
+
+  currentState   = state;
+  initialState   = [...state];
+  solutionMoves  = [];
+  solutionStates = [];
+  stepIndex      = 0;
+
+  // Reset UI
+  document.getElementById('solutionPath').innerHTML =
+    '<span style="color:var(--muted); font-size:12px;">No solution yet — press Solve ↑</span>';
+  document.getElementById('pathLength').textContent = '0';
+  document.getElementById('nodesExplored').textContent = '0';
+  document.getElementById('valF').textContent = '—';
+  document.getElementById('valG').textContent = '—';
+  document.getElementById('valH').textContent = '—';
+
+  setStatus('', 'Puzzle shuffled — press Solve to find the solution');
+  renderCurrentGrid(currentState);
+
+  // Enable/disable buttons
+  document.getElementById('btnSolve').disabled  = false;
+  document.getElementById('btnStep').disabled   = true;
+  document.getElementById('btnPlay').disabled   = true;
+  document.getElementById('btnReset').disabled  = true;
+
+  log('ok', `Shuffled in ${attempts} attempt(s). Inversion count is even → solvable.`);
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 11: SOLVE — Run A* and show results
+   ───────────────────────────────────────────────── */
+function solvePuzzle() {
+  clearLog();
+  setStatus('solving', '⏳ Running A* Search...');
+  log('head', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  log('info', `Start state: [${initialState.join(', ')}]`);
+  log('info', `Goal  state: [${GOAL.join(', ')}]`);
+  log('info', `Initial h(n) = ${manhattanDistance(initialState)} (Manhattan Distance)`);
+
+  // Run A* (this is the main algorithm call)
+  const result = astarSearch(initialState);
+
+  if (!result) {
+    // No solution found
+    setStatus('no-sol', '✗ No solution exists for this configuration');
+    log('err', 'This puzzle configuration is unsolvable.');
+    return;
+  }
+
+  // Store the solution
+  solutionMoves  = result.moves;
+  solutionStates = result.states;
+  stepIndex      = 0;
+
+  // Update stats
+  document.getElementById('pathLength').textContent = solutionMoves.length;
+
+  // Build the solution path chips (the coloured tags showing each move)
+  buildSolutionPath(solutionMoves);
+
+  setStatus('solving', `✓ Solution found! ${solutionMoves.length} moves — press Step or Auto Play`);
+
+  // Enable the step / play / reset buttons now
+  document.getElementById('btnSolve').disabled  = true;
+  document.getElementById('btnStep').disabled   = false;
+  document.getElementById('btnPlay').disabled   = false;
+  document.getElementById('btnReset').disabled  = false;
+
+  log('ok', `Solution path: ${solutionMoves.join(' → ')}`);
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 12: BUILD SOLUTION PATH CHIPS
+   Create the row of coloured tags for each move
+   ───────────────────────────────────────────────── */
+function buildSolutionPath(moves) {
+  const container = document.getElementById('solutionPath');
+  container.innerHTML = '';
+
+  moves.forEach((move, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'step-chip';
+    chip.id        = `chip-${i}`;
+    chip.textContent = `${i + 1}. ${move}`;
+    container.appendChild(chip);
+  });
+}
+
+// Update chip colours as we step through the solution
+function updateChips() {
+  solutionMoves.forEach((_, i) => {
+    const chip = document.getElementById(`chip-${i}`);
+    if (!chip) return;
+    chip.className = 'step-chip'
+      + (i <  stepIndex ? ' done' : '')
+      + (i === stepIndex - 1 ? ' cur' : '');  // Current step highlighted
+  });
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 13: STEP ONCE — Advance one move
+   ───────────────────────────────────────────────── */
+function stepOnce() {
+  if (stepIndex >= solutionMoves.length) return;
+
+  const prevState  = solutionStates[stepIndex];
+  const move       = solutionMoves[stepIndex];
+  stepIndex++;
+  const nextState  = solutionStates[stepIndex];
+
+  currentState = nextState;
+
+  // Re-render the grid with animation
+  renderCurrentGrid(nextState, prevState);
+  updateChips();
+
+  // Log this step
+  const g = stepIndex;
+  const h = manhattanDistance(nextState);
+  log('warn', `Step ${stepIndex}: Move ${move} → g=${g}, h=${h}, f=${g + h}`);
+
+  // Check if we've reached the goal
+  if (stepIndex === solutionMoves.length) {
+    setStatus('solved', `🎉 Solved in ${solutionMoves.length} moves!`);
+    document.getElementById('btnStep').disabled = true;
+    document.getElementById('btnPlay').disabled = true;
+    log('ok', '✓ Goal state reached! Puzzle solved.');
+    stopPlay();
+  } else {
+    setStatus('animating', `Move ${stepIndex}/${solutionMoves.length}: ${move}`);
+  }
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 14: AUTO PLAY — Play all steps with delay
+   ───────────────────────────────────────────────── */
+function togglePlay() {
+  if (isPlaying) {
+    stopPlay();
+  } else {
+    startPlay();
+  }
+}
+
+function startPlay() {
+  isPlaying = true;
+  document.getElementById('btnPlay').textContent = '⏸  Pause';
+  document.getElementById('btnStep').disabled    = true;
+
+  const speed = parseInt(document.getElementById('speedSlider').value);
+
+  // setInterval calls stepOnce repeatedly at the chosen speed
+  playTimer = setInterval(() => {
+    if (stepIndex >= solutionMoves.length) {
+      stopPlay();
+      return;
+    }
+    stepOnce();
+  }, speed);
+}
+
+function stopPlay() {
+  isPlaying = false;
+  clearInterval(playTimer);
+  playTimer = null;
+  document.getElementById('btnPlay').textContent = '⏵  Auto Play';
+  if (stepIndex < solutionMoves.length) {
+    document.getElementById('btnStep').disabled = false;
+  }
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 15: RESET — Go back to the scrambled state
+   ───────────────────────────────────────────────── */
+function resetPuzzle() {
+  stopPlay();
+  currentState = [...initialState];
+  stepIndex    = 0;
+
+  renderCurrentGrid(currentState);
+  buildSolutionPath(solutionMoves);
+
+  document.getElementById('valF').textContent = '—';
+  document.getElementById('valG').textContent = '—';
+  document.getElementById('valH').textContent = '—';
+
+  setStatus('', 'Reset — press Step or Auto Play to replay');
+
+  document.getElementById('btnStep').disabled  = false;
+  document.getElementById('btnPlay').disabled  = false;
+  document.getElementById('btnSolve').disabled = true;
+
+  log('info', 'Puzzle reset to initial scrambled state.');
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 16: STATUS MESSAGE HELPER
+   ───────────────────────────────────────────────── */
+function setStatus(type, message) {
+  const el = document.getElementById('statusMsg');
+  el.className = `status-msg ${type}`;
+  el.textContent = message;
+}
+
+/* ─────────────────────────────────────────────────
+   SECTION 17: SPEED SLIDER — Update the speed label
+   ───────────────────────────────────────────────── */
+document.getElementById('speedSlider').addEventListener('input', function() {
+  document.getElementById('speedVal').textContent = this.value + 'ms';
+  // If auto-play is running, restart it with the new speed
+  if (isPlaying) {
+    stopPlay();
+    startPlay();
+  }
+});
+
+/* ─────────────────────────────────────────────────
+   SECTION 18: INITIALISATION
+   Set up the page when it first loads.
+   ───────────────────────────────────────────────── */
+function init() {
+  renderGoalGrid();   // Draw the fixed goal grid on the right
+  renderCurrentGrid(GOAL);  // Start showing the goal as current too
+  log('info', 'App loaded. Click "Shuffle Puzzle" to begin.');
+  log('info', 'Algorithm: A* with Manhattan Distance heuristic');
+  log('info', `Goal state: [${GOAL.join(', ')}]`);
+}
+
+// Run init when the page loads
+init();
+</script>
+</body>
+</html>
